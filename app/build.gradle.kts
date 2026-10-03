@@ -36,6 +36,24 @@ android {
 }
 
 dependencies {
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.9.5")
+
+    // ViewModel
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
+
+    // StateFlow
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // Retrofit
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
+
+    // JSON
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+
+    // Logging
+    implementation("com.squareup.okhttp3:logging-interceptor:5.1.0")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -51,4 +69,5 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
 }
