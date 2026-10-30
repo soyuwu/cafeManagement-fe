@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
@@ -52,61 +53,70 @@ import com.se114.cafe.navigation.AppNavGraph
 //}
 
 @Composable
-fun Login(){
-    var email by remember { mutableStateOf("")}
-    var password by remember { mutableStateOf("")}
-    var message by remember { mutableStateOf("")}
-    Column(
+fun Header(){
+    Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(color = Color.DarkGray)
-                .height(30.dp)
-                .padding(8.dp)
-        ){
-            Text("Cafe")
-        }
-        OutlinedTextField(
-            value = email,
-            onValueChange = { email = it},
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            .fillMaxWidth()
+            .background(color = Color.DarkGray)
+            .height(30.dp)
+            .padding(8.dp)
+    ){
+        Text(
+            text = "Cafe",
+            color = Color.Red
         )
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it},
-            label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Button(
-            onClick = {
-                message = if (email.isNotBlank() && password.isNotBlank()){
-                    "OK"
-                }
-                else{
-                    "Check it!"
-                }
-            }
-        ) {
-            Text("Login")
-        }
-        Text(text = message)
     }
 }
+//@Composable
+//fun Login(){
+//    var email by remember { mutableStateOf("")}
+//    var password by remember { mutableStateOf("")}
+//    var message by remember { mutableStateOf("")}
+//    Column(
+//        modifier = Modifier
+//            .fillMaxSize()
+//            .padding(24.dp),
+//        verticalArrangement = Arrangement.Center
+//    ) {
+//        Header()
+//        OutlinedTextField(
+//            value = email,
+//            onValueChange = { email = it},
+//            label = { Text("Email") },
+//            modifier = Modifier.fillMaxWidth(),
+//            singleLine = true
+//        )
+//
+//        OutlinedTextField(
+//            value = password,
+//            onValueChange = { password = it},
+//            label = { Text("Password") },
+//            visualTransformation = PasswordVisualTransformation(),
+//            modifier = Modifier.fillMaxWidth(),
+//            singleLine = true
+//        )
+//
+//        Button(
+//            onClick = {
+//                message = if (email.isNotBlank() && password.isNotBlank()) {
+//                    if (!email.contains("@")) "Email is invalid"
+//                    else "OK"
+//                }
+//                else{
+//                    "Check it!"
+//                }
+//            }
+//        ) {
+//            Text("Login")
+//        }
+//        Text(text = message)
+//    }
+//}
 
 @Preview(showBackground = true)
 @Composable
 fun GreetingScreenPreview() {
-    Login()
+    LoginScreen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -117,7 +127,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            Login()
+            LoginScreen()
         }
     }
 }

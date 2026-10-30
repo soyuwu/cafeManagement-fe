@@ -36,7 +36,8 @@ android {
 }
 
 dependencies {
-
+    // API
+    implementation(libs.okhttp.logging)
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.9.5")
 

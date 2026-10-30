@@ -1,8 +1,8 @@
-package com.se114.cafe.network
+package com.se114.cafe.network.api
 
 import retrofit2.http.GET
 
-interface ApiService {
+interface ProductApi {
 
     @GET("api/health")
     suspend fun health(): Map<String, String>
