@@ -4,7 +4,6 @@ import retrofit2.http.GET
 
 interface ProductApi {
 
-    @GET("api/health")
+    @GET("api/products")
     suspend fun health(): Map<String, String>
-
 }

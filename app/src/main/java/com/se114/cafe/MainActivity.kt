@@ -116,9 +116,44 @@ fun Header(){
 @Preview(showBackground = true)
 @Composable
 fun GreetingScreenPreview() {
-    LoginScreen()
+    Menu()
 }
 
+@Composable
+fun plus(){
+
+}
+
+@Composable
+fun Menu(){
+    var quantity by remember {mutableStateOf(0)}
+    Column() {
+        Row() {
+            Column(){
+                Text("Iced Latte")
+                Text("Expresso ket hop sua va da")
+                Text("35.000VND")
+            }
+
+            Box(modifier = Modifier
+                .padding(20.dp)
+            ){
+                Text("Available")
+            }
+        }
+
+        Row() {
+            Text("Quantity")
+            Button(onClick = {}) {
+                Text("+")
+            }
+            Text("$quantity")
+            Button(onClick = {}) {
+                Text("-")
+            }
+        }
+    }
+}
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(
@@ -127,7 +162,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            LoginScreen()
+            Menu()
         }
     }
 }
