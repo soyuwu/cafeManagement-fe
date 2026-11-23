@@ -10,25 +10,55 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.se114.cafe.feature.menu.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import java.math.BigDecimal
 
 @Composable
-internal fun CounterOrderScreen(products: List<MenuProduct>, back: () -> Unit,
-    create: (List<OrderLine>, String, String, String, Int) -> Unit) {
-    var category by rememberSaveable { mutableStateOf(products.first().category) }
+internal fun CounterOrderScreen(products: List<MenuProduct>, categories: List<MenuCategory>,
+    refreshProducts: suspend () -> Unit, refreshAvailability: suspend () -> Unit, back: () -> Unit,
+    create: (List<OrderLine>, String, String, String, BigDecimal) -> Unit) {
+    var attempt by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle, attempt) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            var needsSnapshot = true
+            loading = true
+            while (true) {
+                try {
+                    if (needsSnapshot) refreshProducts() else refreshAvailability()
+                    needsSnapshot = false
+                    loadError = null
+                } catch (e: java.io.IOException) {
+                    loadError = "Không đồng bộ được thực đơn"
+                } catch (e: retrofit2.HttpException) {
+                    loadError = "Không đồng bộ được thực đơn (HTTP ${e.code()})"
+                } finally {
+                    loading = false
+                }
+                delay(30_000)
+            }
+        }
+    }
+    var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    val category = selectedCategory?.takeIf { id -> categories.any { it.id == id } } ?: categories.firstOrNull()?.id
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
-    var amounts by rememberSaveable { mutableStateOf(hashMapOf<String, Int>()) }
+    var draft by rememberSaveable { mutableStateOf(arrayListOf<DraftItem>()) }
+    var replacing by rememberSaveable { mutableStateOf<Long?>(null) }
     var table by rememberSaveable { mutableStateOf("") }
     var customer by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var discount by rememberSaveable { mutableStateOf("") }
     var tableMenu by remember { mutableStateOf(false) }
-    val lines = products.flatMap { product ->
-        product.prices.keys.mapNotNull { size ->
-            amounts["${product.id}/$size"]?.let { OrderLine(product, size, it) }
-        }
-    }
-    val subtotal = lines.sumOf { it.amount }
-    val reduction = discount.toIntOrNull() ?: 0
+    val byId = products.associateBy { it.id }
+    val rows = draft.map { it.resolve(byId[it.productId]) }
+    val lines = rows.mapNotNull { it.line }
+    val subtotal = rows.sumOf { it.amount }
+    val reduction = discount.toBigDecimalOrNull() ?: BigDecimal.ZERO
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         StaffHeader("Tạo đơn tại quầy", back)
         // On compact windows the entire form can scroll while the grid has its own viewport.
@@ -56,14 +86,36 @@ internal fun CounterOrderScreen(products: List<MenuProduct>, back: () -> Unit,
                         }
                     }
                 }
-                MenuCatalog(products, category, lines.groupBy { it.product.id }.mapValues { (_, rows) -> rows.sumOf { it.quantity } },
-                    { category = it }, { editing = it.id }, if (compact) Modifier.height(244.dp) else Modifier.weight(1f))
+                if (loading) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                } else if (loadError != null) {
+                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(loadError.orEmpty(), Modifier.weight(1f))
+                        TextButton(onClick = { attempt++ }) { Text("Thử lại") }
+                    }
+                }
+                if (categories.isNotEmpty() || products.isNotEmpty() || (!loading && loadError == null)) MenuCatalog(products, categories, category, draft.groupBy { it.productId }.mapValues { (_, rows) -> rows.sumOf { it.quantity } },
+                    { selectedCategory = it }, { replacing = null; editing = it.id }, if (compact) Modifier.height(244.dp) else Modifier.weight(1f))
                 Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Đơn hiện tại · ${lines.sumOf { it.quantity }} món", style = MaterialTheme.typography.titleMedium)
+                        Text("Đơn hiện tại · ${draft.sumOf { it.quantity }} món", style = MaterialTheme.typography.titleMedium)
                         Column(Modifier.heightIn(max = 96.dp).verticalScroll(rememberScrollState())) {
-                            lines.forEach { PriceRow(it.label, dong(it.amount)) }
+                            rows.forEach { row ->
+                                val item = row.item
+                                PriceRow(row.line?.label ?: "${item.quantity} × ${item.name} (${item.size})", dong(row.amount))
+                                if (row.priceChanged) Text("Đơn giá đã cập nhật")
+                                if (row.issue != null) {
+                                    Text(row.issue, color = MaterialTheme.colorScheme.error)
+                                    Row {
+                                        TextButton(onClick = { draft = ArrayList(draft - item) }) { Text("Xóa") }
+                                        val product = byId[item.productId]
+                                        if (product?.available == true && product.variants.isNotEmpty()) {
+                                            TextButton(onClick = { replacing = item.variantId; editing = product.id }) { Text("Đổi kích cỡ") }
+                                        }
+                                    }
+                                }
+                            }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Entry(note, { note = it }, "Ghi chú", Modifier.weight(1.5f))
@@ -71,20 +123,26 @@ internal fun CounterOrderScreen(products: List<MenuProduct>, back: () -> Unit,
                                 "Giảm giá (đ)", Modifier.weight(1f), numeric = true)
                         }
                         HorizontalDivider()
-                        PriceRow("Tổng", dong((subtotal - reduction).coerceAtLeast(0)))
+                        PriceRow("Tổng", dong((subtotal - reduction).coerceAtLeast(BigDecimal.ZERO)))
                         if (reduction > subtotal) Text("Giảm giá vượt tổng đơn", color = MaterialTheme.colorScheme.error)
                         OrderAction("Tạo đơn & thu tiền", { create(lines, customer, table, note, reduction) },
-                            enabled = lines.isNotEmpty() && reduction <= subtotal)
+                            enabled = !loading && lines.isNotEmpty() && rows.all { it.issue == null } && reduction <= subtotal)
                     }
                 }
             }
         }
     }
     products.find { it.id == editing }?.let { product ->
-        MenuSelectionDialog(product, lines.filter { it.product.id == product.id }.associate { it.size to it.quantity },
-            { size, quantity ->
-                val key = "${product.id}/$size"
-                amounts = HashMap(amounts).apply { if (quantity == 0) remove(key) else put(key, quantity) }
+        val quantities = draft.filter { it.productId == product.id }.associate { it.variantId to it.quantity }
+        val previous = replacing?.let { quantities[it] } ?: 0
+        val targetQuantities = if (previous == 0) quantities else product.variants.associate {
+            it.id to ((quantities[it.id] ?: 0) + previous).coerceAtMost(99)
+        }
+        MenuSelectionDialog(product, targetQuantities,
+            { variantId, quantity ->
+                val variant = product.variants.first { it.id == variantId }
+                draft = ArrayList(draft.filterNot { it.productId == product.id && (it.variantId == variantId || it.variantId == replacing) })
+                    .apply { if (quantity > 0) add(DraftItem(product.id, variantId, product.name, variant.size, variant.price, quantity)) }
                 editing = null
             }, { editing = null })
     }

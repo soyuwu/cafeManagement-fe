@@ -8,9 +8,8 @@ import androidx.navigation.navArgument
 import com.se114.cafe.feature.staff.*
 
 @Composable
-fun AppNavGraph() {
+fun AppNavGraph(model: StaffOrdersViewModel = viewModel()) {
     val nav = rememberNavController()
-    val model: StaffOrdersViewModel = viewModel()
     val state by model.state.collectAsState()
     NavHost(nav, startDestination = "orders") {
         composable("orders") {
@@ -18,9 +17,10 @@ fun AppNavGraph() {
                 model::advance, model::toggleAvailability)
         }
         composable("counter") {
-            CounterOrderScreen(state.products, { nav.popBackStack() }) { lines, customer, table, note, discount ->
+            if (!menuNetworkReady { nav.popBackStack() }) return@composable
+            CounterOrderScreen(state.products, state.categories, model::refreshProducts, model::refreshAvailability, { nav.popBackStack() }) { lines, customer, table, note, discount ->
                 val number = model.create(lines, customer, table, note, discount)
-                nav.navigate("orders/$number") { popUpTo("counter") { inclusive = true } }
+                if (number != null) nav.navigate("orders/$number") { popUpTo("counter") { inclusive = true } }
             }
         }
         composable("orders/{number}", arguments = listOf(navArgument("number") { type = NavType.IntType })) { entry ->

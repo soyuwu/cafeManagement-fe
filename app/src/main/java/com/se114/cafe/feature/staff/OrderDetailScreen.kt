@@ -35,7 +35,7 @@ internal fun OrderDetailScreen(order: Order, back: () -> Unit, advance: () -> Un
                 }
                 HorizontalDivider()
                 if (order.note.isNotEmpty()) Text("Ghi chú: ${order.note}", style = MaterialTheme.typography.bodyMedium)
-                if (order.discount > 0) PriceRow("Giảm giá", "−" + dong(order.discount))
+                if (order.discount.signum() > 0) PriceRow("Giảm giá", "−" + dong(order.discount))
                 PriceRow("Tổng", dong(order.total))
             }
             if (order.stage != Stage.Served) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

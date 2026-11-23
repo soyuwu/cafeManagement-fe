@@ -1,7 +1,11 @@
 package com.se114.cafe.feature.staff
 
 import androidx.lifecycle.ViewModel
+import java.math.BigDecimal
+import com.se114.cafe.network.dto.ProductVariantResponse
 import com.se114.cafe.feature.menu.MenuProduct
+import com.se114.cafe.feature.menu.MenuCategory
+import com.se114.cafe.repository.MenuRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -15,27 +19,69 @@ internal enum class Stage(val tab: String, val label: String, val action: String
     Served("", "Đã phục vụ", "")
 }
 
-internal data class OrderLine(val product: MenuProduct, val size: String, val quantity: Int, val options: String = "") {
-    val amount get() = product.prices.getValue(size) * quantity
-    val label get() = "$quantity × ${product.name}" + if (size.isEmpty()) "" else " ($size)"
+internal data class OrderLine(val product: MenuProduct, val variant: ProductVariantResponse, val quantity: Int, val options: String = "") {
+    val amount get() = variant.price * quantity.toBigDecimal()
+    val label get() = "$quantity × ${product.name}" + if (variant.size.isEmpty()) "" else " (${variant.size})"
 }
 internal data class Order(
     val number: Int, val lines: List<OrderLine>, val customer: String, val table: String,
     val placed: LocalDateTime, val fromApp: Boolean = false, val stage: Stage = Stage.Pending,
-    val paid: Boolean = false, val note: String = "", val discount: Int = 0,
+    val paid: Boolean = false, val note: String = "", val discount: BigDecimal = BigDecimal.ZERO,
     val history: List<String> = emptyList(), val cancellationRequested: Boolean = false
 ) {
     val code get() = "#A-" + number.toString().padStart(4, '0')
-    val total get() = (lines.sumOf { it.amount } - discount).coerceAtLeast(0)
+    val total get() = (lines.sumOf { it.amount } - discount).coerceAtLeast(BigDecimal.ZERO)
     val location get() = listOf(table.ifBlank { "Mang đi" }, customer.ifBlank { "Khách vãng lai" }).joinToString(" · ")
 }
 internal fun LocalDateTime.clock(): String = format(DateTimeFormatter.ofPattern("HH:mm"))
 
-internal data class StaffState(val products: List<MenuProduct>, val orders: List<Order>)
+internal data class StaffState(
+    val products: List<MenuProduct>,
+    val orders: List<Order>,
+    val categories: List<MenuCategory> = emptyList()
+)
 
-class StaffOrdersViewModel : ViewModel() {
-    private val mutableState = MutableStateFlow(sampleShift())
+class StaffOrdersViewModel internal constructor(
+    products: List<MenuProduct>,
+    private val repository: MenuRepository? = null
+) : ViewModel() {
+    constructor() : this(emptyList(), MenuRepository())
+
+    private val mutableState = MutableStateFlow(StaffState(products, emptyList(),
+        products.map { MenuCategory(it.categoryId, it.categoryId) }.distinct()))
     internal val state = mutableState.asStateFlow()
+
+    private var snapshotLoaded = false
+
+    internal suspend fun refreshProducts() {
+        val result = repository?.snapshot() ?: return
+        if (result.notModified && snapshotLoaded) return
+        val snapshot = result.body
+        val categories = snapshot.categories.mapNotNull { category ->
+            category.id?.let { MenuCategory(it.toString(), category.name) }
+        }
+        val categoryIds = categories.map { it.id }.toSet()
+        val products = snapshot.products.mapNotNull { product ->
+            val id = product.id ?: return@mapNotNull null
+            val category = product.categoryId?.toString()?.takeIf { it in categoryIds } ?: "other"
+            MenuProduct(id.toString(), product.name, category, product.variants.orEmpty(),
+                product.isAvailable, product.minPrice)
+        }
+        val tabs = if (products.any { it.categoryId == "other" }) categories + MenuCategory("other", "Khác") else categories
+        mutableState.update { it.copy(products = products, categories = tabs) }
+        snapshotLoaded = true
+    }
+
+    internal suspend fun refreshAvailability() {
+        val availability = repository?.availability()?.associate { it.productId.toString() to it.isAvailable } ?: return
+        if (availability.keys != state.value.products.map { it.id }.toSet()) {
+            refreshProducts()
+        } else {
+            mutableState.update { current ->
+                current.copy(products = current.products.map { it.copy(available = availability.getValue(it.id)) })
+            }
+        }
+    }
 
     internal fun toggleAvailability(id: String) = mutableState.update { state ->
         state.copy(products = state.products.map { if (it.id == id) it.copy(available = !it.available) else it })
@@ -66,46 +112,16 @@ class StaffOrdersViewModel : ViewModel() {
         }
     }
 
-    internal fun create(lines: List<OrderLine>, customer: String, table: String, note: String, discount: Int): Int {
+    internal fun create(lines: List<OrderLine>, customer: String, table: String, note: String, discount: BigDecimal): Int? {
         val state = mutableState.value
-        require(lines.isNotEmpty() && lines.all { line ->
-            line.quantity in 1..99 && state.products.any { it.id == line.product.id && it.available }
-        })
+        if (lines.isEmpty() || !lines.all { line ->
+            line.quantity in 1..99 && state.products.any { it.id == line.product.id && it.available && line.variant in it.variants }
+        }) return null
         val now = LocalDateTime.now()
         val order = Order((state.orders.maxOfOrNull { it.number } ?: 0) + 1, lines.toList(),
-            customer.trim(), table, now, note = note.trim(), discount = discount.coerceIn(0, lines.sumOf { it.amount }),
+            customer.trim(), table, now, note = note.trim(), discount = discount.coerceIn(BigDecimal.ZERO, lines.sumOf { it.amount }),
             history = listOf("${now.clock()}  Tạo đơn tại quầy"))
         mutableState.value = state.copy(orders = listOf(order) + state.orders)
         return order.number
     }
-}
-
-private fun sampleShift(): StaffState {
-    val products = listOf(
-        MenuProduct("milk", "Cà phê sữa đá", "Cà phê", mapOf("S" to 25000, "M" to 35000, "L" to 40000)),
-        MenuProduct("white", "Bạc xỉu", "Cà phê", mapOf("S" to 29000, "M" to 39000, "L" to 52000)),
-        MenuProduct("black", "Cà phê đen", "Cà phê", mapOf("S" to 20000, "M" to 22000, "L" to 27000)),
-        MenuProduct("salt", "Cà phê muối", "Cà phê", mapOf("M" to 35000), false),
-        MenuProduct("peach", "Trà đào cam sả", "Trà", mapOf("M" to 35000, "L" to 40000)),
-        MenuProduct("mango", "Sinh tố xoài", "Sinh tố", mapOf("M" to 40000)),
-        MenuProduct("cake", "Bánh chuối", "Bánh", mapOf("" to 25000))
-    )
-    val now = LocalDateTime.now()
-    val orders = listOf(Stage.Pending, Stage.Pending, Stage.Pending, Stage.Preparing, Stage.Preparing, Stage.Ready)
-        .mapIndexed { index, stage ->
-            val placed = now.minusMinutes(2L + 3 * index)
-            val lines = when (index % 3) {
-                0 -> listOf(OrderLine(products[0], "M", 1, "50% đường · 70% đá · Trân châu"),
-                    OrderLine(products[1], "L", 2, "100% đường · Ít đá"))
-                1 -> listOf(OrderLine(products[2], "M", 2))
-                else -> listOf(OrderLine(products[4], "L", 1))
-            }
-            val guest = index % 3 == 1
-            val events = mutableListOf("${placed.clock()}  Tạo đơn")
-            if (stage != Stage.Pending) events += "${placed.plusMinutes(1).clock()}  Đang pha"
-            if (stage == Stage.Ready) events += "${placed.plusMinutes(2).clock()}  Sẵn sàng"
-            Order(142 - index, lines, if (guest) "" else "Gia Huy", if (guest) "" else if (index == 0) "Bàn T05" else "Bàn T02",
-                placed, !guest, stage, paid = guest, note = if (index == 0) "mang ra cùng lúc" else "", history = events)
-        }
-    return StaffState(products, orders)
 }

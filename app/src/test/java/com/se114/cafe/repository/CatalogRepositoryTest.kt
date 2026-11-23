@@ -1,5 +1,6 @@
 package com.se114.cafe.repository
 
+import com.se114.cafe.feature.staff.StaffOrdersViewModel
 import com.google.gson.JsonParser
 import com.se114.cafe.network.api.CategoryApi
 import com.se114.cafe.network.api.MenuApi
@@ -41,6 +42,49 @@ class CatalogRepositoryTest {
         assertEquals("Coffee", repo.getCategories().single().name)
         assertEquals(3L, repo.getProducts().single().categoryId)
         assertEquals(listOf("GET /api/menu/categories", "GET /api/menu/products"), calls)
+    }
+
+    @Test fun counterMenu_revalidatesEachUrlAndReloadsChangedProductIds() = runBlocking {
+        val tags = mutableListOf<String?>()
+        val paths = mutableListOf<String>()
+        val snapshot = """{"categories":[$category],"products":[$product]}"""
+        val updated = snapshot.replace("Latte", "Latte mới")
+            .replace("\"id\":7", "\"id\":8")
+        val responses = listOf(
+            Triple(200, "menu1", snapshot),
+            Triple(200, "stock1", """[{"productId":7,"isAvailable":true}]"""),
+            Triple(304, "stock1", ""),
+            Triple(304, "menu1", ""),
+            Triple(200, "stock2", """[{"productId":8,"isAvailable":true}]"""),
+            Triple(200, "menu2", updated),
+            Triple(304, "menu2", "")
+        ).iterator()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            tags += request.header("If-None-Match")
+            paths += request.url.encodedPath
+            val (code, tag, body) = responses.next()
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                .code(code).message("Menu").header("ETag", tag)
+                .body(body.toResponseBody("application/json".toMediaType())).build()
+        }.build()
+        val api = retrofit.newBuilder().client(http).build().create(MenuApi::class.java)
+        val model = StaffOrdersViewModel(emptyList(), MenuRepository(api))
+        model.refreshProducts()
+        assertFalse(model.state.value.products.single().available)
+        assertEquals("3", model.state.value.categories.single().id)
+        repeat(2) {
+            model.refreshAvailability()
+            assertTrue(model.state.value.products.single().available)
+        }
+        model.refreshProducts()
+        assertTrue(model.state.value.products.single().available)
+        model.refreshAvailability()
+        model.refreshProducts()
+        assertEquals("Latte mới", model.state.value.products.single().name)
+        assertEquals(listOf(null, null, "stock1", "menu1", "stock1", "menu1", "menu2"), tags)
+        assertEquals(listOf("/api/menu", "/api/menu/availability", "/api/menu/availability",
+            "/api/menu", "/api/menu/availability", "/api/menu", "/api/menu"), paths)
     }
 
     @Test fun categories_listAndCreate() = runBlocking {
