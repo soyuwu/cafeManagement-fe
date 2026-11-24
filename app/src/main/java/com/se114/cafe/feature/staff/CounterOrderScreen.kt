@@ -10,40 +10,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.se114.cafe.feature.menu.*
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.delay
 import java.math.BigDecimal
 
 @Composable
 internal fun CounterOrderScreen(products: List<MenuProduct>, categories: List<MenuCategory>,
     refreshProducts: suspend () -> Unit, refreshAvailability: suspend () -> Unit, back: () -> Unit,
     create: (List<OrderLine>, String, String, String, BigDecimal) -> Unit) {
-    var attempt by remember { mutableIntStateOf(0) }
-    var loading by remember { mutableStateOf(true) }
-    var loadError by remember { mutableStateOf<String?>(null) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle, attempt) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            var needsSnapshot = true
-            loading = true
-            while (true) {
-                try {
-                    if (needsSnapshot) refreshProducts() else refreshAvailability()
-                    needsSnapshot = false
-                    loadError = null
-                } catch (e: java.io.IOException) {
-                    loadError = "Không đồng bộ được thực đơn"
-                } catch (e: retrofit2.HttpException) {
-                    loadError = "Không đồng bộ được thực đơn (HTTP ${e.code()})"
-                } finally {
-                    loading = false
-                }
-                delay(30_000)
-            }
-        }
-    }
+    val sync = rememberMenuSync(refreshProducts, refreshAvailability)
     var selectedCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val category = selectedCategory?.takeIf { id -> categories.any { it.id == id } } ?: categories.firstOrNull()?.id
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
@@ -86,15 +59,8 @@ internal fun CounterOrderScreen(products: List<MenuProduct>, categories: List<Me
                         }
                     }
                 }
-                if (loading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
-                } else if (loadError != null) {
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text(loadError.orEmpty(), Modifier.weight(1f))
-                        TextButton(onClick = { attempt++ }) { Text("Thử lại") }
-                    }
-                }
-                if (categories.isNotEmpty() || products.isNotEmpty() || (!loading && loadError == null)) MenuCatalog(products, categories, category, draft.groupBy { it.productId }.mapValues { (_, rows) -> rows.sumOf { it.quantity } },
+                MenuSyncStatus(sync)
+                if (categories.isNotEmpty() || products.isNotEmpty() || (!sync.loading && sync.error == null)) MenuCatalog(products, categories, category, draft.groupBy { it.productId }.mapValues { (_, rows) -> rows.sumOf { it.quantity } },
                     { selectedCategory = it }, { replacing = null; editing = it.id }, if (compact) Modifier.height(244.dp) else Modifier.weight(1f))
                 Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
@@ -126,7 +92,7 @@ internal fun CounterOrderScreen(products: List<MenuProduct>, categories: List<Me
                         PriceRow("Tổng", dong((subtotal - reduction).coerceAtLeast(BigDecimal.ZERO)))
                         if (reduction > subtotal) Text("Giảm giá vượt tổng đơn", color = MaterialTheme.colorScheme.error)
                         OrderAction("Tạo đơn & thu tiền", { create(lines, customer, table, note, reduction) },
-                            enabled = !loading && lines.isNotEmpty() && rows.all { it.issue == null } && reduction <= subtotal)
+                            enabled = !sync.loading && lines.isNotEmpty() && rows.all { it.issue == null } && reduction <= subtotal)
                     }
                 }
             }

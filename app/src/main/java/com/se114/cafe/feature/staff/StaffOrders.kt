@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import java.math.BigDecimal
 import com.se114.cafe.network.dto.ProductVariantResponse
 import com.se114.cafe.feature.menu.MenuProduct
+import com.se114.cafe.feature.menu.MenuFeed
+import com.se114.cafe.feature.menu.MenuData
 import com.se114.cafe.feature.menu.MenuCategory
 import com.se114.cafe.repository.MenuRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +45,7 @@ internal data class StaffState(
 
 class StaffOrdersViewModel internal constructor(
     products: List<MenuProduct>,
-    private val repository: MenuRepository? = null
+    repository: MenuRepository? = null
 ) : ViewModel() {
     constructor() : this(emptyList(), MenuRepository())
 
@@ -51,36 +53,16 @@ class StaffOrdersViewModel internal constructor(
         products.map { MenuCategory(it.categoryId, it.categoryId) }.distinct()))
     internal val state = mutableState.asStateFlow()
 
-    private var snapshotLoaded = false
+    private val menu = repository?.let(::MenuFeed)
 
     internal suspend fun refreshProducts() {
-        val result = repository?.snapshot() ?: return
-        if (result.notModified && snapshotLoaded) return
-        val snapshot = result.body
-        val categories = snapshot.categories.mapNotNull { category ->
-            category.id?.let { MenuCategory(it.toString(), category.name) }
-        }
-        val categoryIds = categories.map { it.id }.toSet()
-        val products = snapshot.products.mapNotNull { product ->
-            val id = product.id ?: return@mapNotNull null
-            val category = product.categoryId?.toString()?.takeIf { it in categoryIds } ?: "other"
-            MenuProduct(id.toString(), product.name, category, product.variants.orEmpty(),
-                product.isAvailable, product.minPrice)
-        }
-        val tabs = if (products.any { it.categoryId == "other" }) categories + MenuCategory("other", "Khác") else categories
-        mutableState.update { it.copy(products = products, categories = tabs) }
-        snapshotLoaded = true
+        val catalog = menu?.snapshot() ?: return
+        mutableState.update { it.copy(products = catalog.products, categories = catalog.categories) }
     }
 
     internal suspend fun refreshAvailability() {
-        val availability = repository?.availability()?.associate { it.productId.toString() to it.isAvailable } ?: return
-        if (availability.keys != state.value.products.map { it.id }.toSet()) {
-            refreshProducts()
-        } else {
-            mutableState.update { current ->
-                current.copy(products = current.products.map { it.copy(available = availability.getValue(it.id)) })
-            }
-        }
+        val catalog = menu?.availability(MenuData(state.value.products, state.value.categories)) ?: return
+        mutableState.update { it.copy(products = catalog.products, categories = catalog.categories) }
     }
 
     internal fun toggleAvailability(id: String) = mutableState.update { state ->
