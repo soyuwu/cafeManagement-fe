@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import androidx.activity.compose.LocalActivity
+import com.se114.cafe.feature.admin.AdminScreen
 import com.se114.cafe.feature.customer.CartScreen
 import com.se114.cafe.feature.customer.CustomerViewModel
 import com.se114.cafe.feature.customer.MenuScreen
@@ -26,7 +27,10 @@ fun AppNavGraph(model: StaffOrdersViewModel = viewModel()) {
         NavHost(nav, startDestination = "orders") {
             composable("orders") {
                 OrdersScreen(state, { nav.navigate("orders/$it") }, { nav.navigate("counter") },
-                    model::advance, model::toggleAvailability)
+                    model::advance, model::toggleAvailability, { nav.navigate("admin") })
+            }
+            composable("admin") {
+                CafeTheme(CafeRole.Admin) { AdminScreen() }
             }
             composable("counter") {
                 if (!menuNetworkReady { nav.popBackStack() }) return@composable

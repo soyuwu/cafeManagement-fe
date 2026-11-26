@@ -16,7 +16,7 @@ import java.time.LocalDateTime
 
 @Composable
 internal fun OrdersScreen(state: StaffState, open: (Int) -> Unit, create: () -> Unit,
-    advance: (Int, Stage) -> Unit, toggleAvailability: (String) -> Unit) {
+    advance: (Int, Stage) -> Unit, toggleAvailability: (String) -> Unit, openAdmin: () -> Unit) {
     var stage by rememberSaveable { mutableStateOf(Stage.Pending) }
     var inventory by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
@@ -31,6 +31,7 @@ internal fun OrdersScreen(state: StaffState, open: (Int) -> Unit, create: () -> 
                 }
                 OutlinedButton(onClick = { inventory = true }, shape = MaterialTheme.shapes.medium) { Text("Hết món", color = Color.White) }
             }
+            TextButton(onClick = openAdmin) { Text("Admin · Dữ liệu mẫu", color = Color.White) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Stage.entries.filter { it != Stage.Served }.forEach { tab ->
                     val active = stage == tab
